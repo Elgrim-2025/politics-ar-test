@@ -436,7 +436,7 @@ function makeVideoMesh(video, useChroma) {
           });
 
     // 16:9 비율, 기본 너비 1.5m
-    const mesh   = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5 * 16/14), mat);
+    const mesh   = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5 * 16/15), mat);
     mesh.visible = false;
     return mesh;
 }
