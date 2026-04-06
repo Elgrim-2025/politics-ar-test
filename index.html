@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Politics AR</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
+        }
+
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+
+        /* ── 상태 바 ── */
+        #status-bar {
+            position: fixed;
+            bottom: 52px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.62);
+            color: #fff;
+            font-size: 15px;
+            font-weight: 500;
+            padding: 10px 22px;
+            border-radius: 24px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            pointer-events: none;
+            z-index: 200;
+            white-space: nowrap;
+            letter-spacing: 0.2px;
+            transition: opacity 0.5s ease;
+        }
+        #status-bar.fade { opacity: 0; }
+
+        /* ── 안내 오버레이 ── */
+        #instruction-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.80);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            z-index: 999;
+            cursor: pointer;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        .modal-card {
+            background: #ffffff;
+            border-radius: 26px;
+            padding: 36px 30px 30px;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: 0 28px 90px rgba(0, 0, 0, 0.65);
+            animation: popIn 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+        }
+
+        @keyframes popIn {
+            from { transform: scale(0.85) translateY(30px); opacity: 0; }
+            to   { transform: scale(1)    translateY(0);    opacity: 1; }
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 26px;
+        }
+
+        .modal-emoji {
+            font-size: 52px;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+
+        .modal-titles h1 {
+            font-size: 23px;
+            font-weight: 800;
+            color: #111;
+            line-height: 1.25;
+        }
+
+        .modal-titles p {
+            font-size: 13px;
+            color: #999;
+            margin-top: 3px;
+        }
+
+        .instruction-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 26px;
+        }
+
+        .instruction-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 13px;
+            background: #f5f7fb;
+            border-radius: 16px;
+            padding: 14px 16px;
+        }
+
+        .li-icon {
+            font-size: 26px;
+            line-height: 1;
+            min-width: 30px;
+            text-align: center;
+            margin-top: 1px;
+        }
+
+        .li-text {
+            font-size: 15px;
+            color: #222;
+            line-height: 1.55;
+        }
+
+        .li-text strong {
+            color: #1a6cf7;
+            font-weight: 700;
+        }
+
+        .tap-hint {
+            text-align: center;
+            font-size: 14px;
+            color: #aaa;
+            letter-spacing: 0.3px;
+            animation: pulse 1.7s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.45; }
+            50%       { opacity: 1;    }
+        }
+
+        /* ── 에러 화면 ── */
+        #error-display {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: rgba(0, 0, 0, 0.80);
+            z-index: 1000;
+        }
+
+        .error-card {
+            background: #fff;
+            border-radius: 20px;
+            padding: 32px 28px;
+            max-width: 340px;
+            text-align: center;
+        }
+
+        .error-card .e-icon { font-size: 52px; margin-bottom: 14px; }
+        .error-card p { font-size: 15px; color: #333; line-height: 1.65; white-space: pre-line; }
+    </style>
+</head>
+<body>
+
+<!-- 렌더링 캔버스 (WebXR + 8th Wall 공용) -->
+<canvas id="canvas"></canvas>
+
+<!-- 하단 상태 메시지 -->
+<div id="status-bar">바닥을 스캔하는 중...</div>
+
+<!-- ═══════════════════════════════════════════
+     안내 오버레이  (터치하면 사라짐 + AR 시작)
+═══════════════════════════════════════════ -->
+<div id="instruction-overlay">
+    <div class="modal-card">
+        <div class="modal-header">
+            <div class="modal-emoji">📱</div>
+            <div class="modal-titles">
+                <h1>AR 체험 안내</h1>
+                <p>증강현실 사용 방법을 확인해 주세요</p>
+            </div>
+        </div>
+
+        <ul class="instruction-list">
+            <li>
+                <span class="li-icon">📷</span>
+                <span class="li-text">카메라를 <strong>바닥</strong>을 향해 천천히<br>움직여 바닥을 인식시켜 주십시오</span>
+            </li>
+            <li>
+                <span class="li-icon">👆</span>
+                <span class="li-text">바닥이 인식되면 화면을 <strong>탭</strong>하여<br>영상을 원하는 위치에 배치하세요</span>
+            </li>
+            <li>
+                <span class="li-icon">🤏</span>
+                <span class="li-text"><strong>두 손가락 핀치</strong>로 영상의 크기를<br>자유롭게 조절할 수 있습니다</span>
+            </li>
+            <li>
+                <span class="li-icon">✋</span>
+                <span class="li-text"><strong>한 손가락 드래그</strong>로 영상의 위치를<br>이동할 수 있습니다</span>
+            </li>
+        </ul>
+
+        <div class="tap-hint">▼&nbsp; 화면을 터치하면 AR이 시작됩니다 &nbsp;▼</div>
+    </div>
+</div>
+
+<!-- 에러 표시 -->
+<div id="error-display">
+    <div class="error-card">
+        <div class="e-icon">⚠️</div>
+        <p id="error-text">오류가 발생했습니다.</p>
+    </div>
+</div>
+
+<!-- Three.js -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════
+   ★ 8th Wall 앱 키 설정
+   https://www.8thwall.com 에서 프로젝트 생성 후
+   아래 APP_KEY 를 실제 키로 교체하세요.
+═══════════════════════════════════════════════════════ */
+const EIGHTH_WALL_APP_KEY = 'YOUR_8TH_WALL_APP_KEY';
+
+/* ───────────────────────────────────────────────────────
+   플랫폼 감지
+─────────────────────────────────────────────────────── */
+const IS_IOS =
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+/* ───────────────────────────────────────────────────────
+   UI 헬퍼
+─────────────────────────────────────────────────────── */
+const $status = document.getElementById('status-bar');
+let   _fadeTimer = null;
+
+function setStatus(msg, fadeAfterMs = 0) {
+    $status.textContent = msg;
+    $status.classList.remove('fade');
+    if (_fadeTimer) { clearTimeout(_fadeTimer); _fadeTimer = null; }
+    if (fadeAfterMs > 0) {
+        _fadeTimer = setTimeout(() => $status.classList.add('fade'), fadeAfterMs);
+    }
+}
+
+function showError(msg) {
+    document.getElementById('error-display').style.display = 'flex';
+    document.getElementById('error-text').textContent = msg;
+    document.getElementById('instruction-overlay').style.display = 'none';
+}
+
+/* ───────────────────────────────────────────────────────
+   안내 오버레이 → 터치/클릭 시 AR 시작
+─────────────────────────────────────────────────────── */
+const $overlay = document.getElementById('instruction-overlay');
+let   _started  = false;
+
+function dismissAndStart() {
+    if (_started) return;
+    _started = true;
+
+    $overlay.style.transition = 'opacity 0.35s ease';
+    $overlay.style.opacity    = '0';
+    setTimeout(() => { $overlay.style.display = 'none'; }, 370);
+
+    IS_IOS ? initIOS() : initAndroid();
+}
+
+$overlay.addEventListener('touchend', e => { e.preventDefault(); dismissAndStart(); }, { passive: false });
+$overlay.addEventListener('click', dismissAndStart);
+
+/* ═══════════════════════════════════════════════════════
+   크로마키 셰이더  (iOS / mp4 그린스크린 제거)
+═══════════════════════════════════════════════════════ */
+const CHROMA_VERT = `
+varying vec2 vUv;
+void main(){
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+}`;
+
+const CHROMA_FRAG = `
+precision mediump float;
+uniform sampler2D map;
+uniform float threshold;
+uniform float softness;
+varying vec2 vUv;
+
+vec3 rgb2hsv(vec3 c){
+    vec4 K = vec4(0.0,-1.0/3.0,2.0/3.0,-1.0);
+    vec4 p = mix(vec4(c.bg,K.wz),vec4(c.gb,K.xy),step(c.b,c.g));
+    vec4 q = mix(vec4(p.xyw,c.r),vec4(c.r,p.yzx),step(p.x,c.r));
+    float d = q.x - min(q.w,q.y);
+    return vec3(abs(q.z+(q.w-q.y)/(6.0*d+1e-10)), d/(q.x+1e-10), q.x);
+}
+
+void main(){
+    vec4 col = texture2D(map, vUv);
+    vec3 hsv = rgb2hsv(col.rgb);
+
+    // 초록 색조 범위: hue ~0.25–0.45
+    float hDist   = abs(hsv.x - 0.35);
+    float chroma  = hsv.y * hsv.z;
+    float green   = (1.0 - smoothstep(0.0, threshold, hDist)) * chroma;
+    float alpha   = 1.0 - smoothstep(threshold - softness, threshold + softness, green * 1.8);
+
+    // 그린 스필 억제
+    vec3 rgb = col.rgb;
+    if(alpha < 0.98){
+        rgb.g = min(rgb.g, (rgb.r + rgb.b) * 0.55);
+    }
+    gl_FragColor = vec4(rgb, alpha);
+}`;
+
+/* ───────────────────────────────────────────────────────
+   공통: 비디오 요소 생성
+─────────────────────────────────────────────────────── */
+function makeVideo(src) {
+    const v = document.createElement('video');
+    v.src       = src;
+    v.loop      = true;
+    v.muted     = true;   // 자동재생용 → 배치 시 소리 켬
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    v.setAttribute('webkit-playsinline', '');
+    v.crossOrigin = 'anonymous';
+    v.preload   = 'auto';
+    v.load();
+    return v;
+}
+
+/* ───────────────────────────────────────────────────────
+   공통: 비디오 평면 메쉬 생성
+─────────────────────────────────────────────────────── */
+function makeVideoMesh(video, useChroma) {
+    const tex = new THREE.VideoTexture(video);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.format    = THREE.RGBAFormat;
+
+    const mat = useChroma
+        ? new THREE.ShaderMaterial({
+              uniforms: {
+                  map:       { value: tex },
+                  threshold: { value: 0.38 },
+                  softness:  { value: 0.12 }
+              },
+              vertexShader:   CHROMA_VERT,
+              fragmentShader: CHROMA_FRAG,
+              transparent:    true,
+              side:           THREE.DoubleSide,
+              depthWrite:     false
+          })
+        : new THREE.MeshBasicMaterial({
+              map:         tex,
+              transparent: true,
+              side:        THREE.DoubleSide,
+              depthWrite:  false
+          });
+
+    // 16:9 비율, 기본 너비 1.5m
+    const mesh   = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5 * 9/16), mat);
+    mesh.visible = false;
+    return mesh;
+}
+
+/* ───────────────────────────────────────────────────────
+   공통: 비디오 재생 (소리 포함)
+─────────────────────────────────────────────────────── */
+function playWithAudio(video) {
+    video.muted = false;
+    video.play().catch(() => {
+        video.muted = true;
+        video.play();
+    });
+}
+
+/* ═══════════════════════════════════════════════════════
+   GestureManager  (핀치 스케일 + 드래그 이동)
+═══════════════════════════════════════════════════════ */
+class GestureManager {
+    constructor(mesh, dragCb) {
+        this.mesh      = mesh;
+        this.dragCb    = dragCb; // fn(normX, normY)
+        this.active    = false;
+        this._pinching = false;
+        this._lastD    = 0;
+        this.dragging  = false;
+    }
+
+    enable() { this.active = true; }
+
+    onTouchStart(e) {
+        if (!this.active) return;
+        if (e.touches.length === 2) {
+            this._pinching = true;
+            this.dragging  = false;
+            this._lastD    = this._d(e.touches[0], e.touches[1]);
+        } else if (e.touches.length === 1) {
+            this.dragging  = true;
+            this._pinching = false;
+        }
+    }
+
+    onTouchMove(e) {
+        if (!this.active || !this.mesh) return;
+
+        if (e.touches.length === 2 && this._pinching) {
+            const d = this._d(e.touches[0], e.touches[1]);
+            if (this._lastD > 0) {
+                const ratio = d / this._lastD;
+                const ns    = THREE.MathUtils.clamp(this.mesh.scale.x * ratio, 0.05, 12);
+                this.mesh.scale.setScalar(ns);
+            }
+            this._lastD = d;
+        } else if (e.touches.length === 1 && this.dragging && this.dragCb) {
+            const t = e.touches[0];
+            this.dragCb(t.clientX / window.innerWidth, t.clientY / window.innerHeight);
+        }
+    }
+
+    onTouchEnd(e) {
+        if (e.touches.length < 2) { this._pinching = false; this._lastD = 0; }
+        if (e.touches.length === 0) { this.dragging = false; }
+    }
+
+    _d(a, b) { return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); }
+}
+
+/* ═══════════════════════════════════════════════════════
+   ANDROID  —  WebXR hit-test
+═══════════════════════════════════════════════════════ */
+async function initAndroid() {
+    if (!navigator.xr) {
+        showError('WebXR를 지원하지 않는 브라우저입니다.\nChrome 최신 버전을 사용해 주세요.');
+        return;
+    }
+    const ok = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
+    if (!ok) {
+        showError('이 기기에서 AR(WebXR)이 지원되지 않습니다.\nAR Core가 설치되어 있는지 확인해 주세요.');
+        return;
+    }
+
+    /* ── Three.js 초기화 ── */
+    const canvas   = document.getElementById('canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+
+    const scene  = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 200);
+    scene.add(new THREE.AmbientLight(0xffffff, 1.4));
+
+    /* ── 레티클 (바닥 인식 표시) ── */
+    const reticleGeo = new THREE.RingGeometry(0.07, 0.095, 36);
+    reticleGeo.rotateX(-Math.PI / 2);
+    const reticle = new THREE.Mesh(
+        reticleGeo,
+        new THREE.MeshBasicMaterial({ color: 0x4caf50, side: THREE.DoubleSide })
+    );
+    reticle.visible = false;
+    scene.add(reticle);
+
+    /* ── 비디오 메쉬 ── */
+    const video     = makeVideo('assets/output-example-alpha.webm');
+    const videoMesh = makeVideoMesh(video, false);
+    scene.add(videoMesh);
+
+    /* ── 상태 변수 ── */
+    let videoPlaced   = false;
+    let floorY        = 0;      // 최초 배치된 바닥 Y
+    let pendingTap    = false;
+    let pendingDragNX = -1;
+    let pendingDragNY = -1;
+
+    /* ── 제스처 ── */
+    const gestures = new GestureManager(videoMesh, (nx, ny) => {
+        if (videoPlaced) { pendingDragNX = nx; pendingDragNY = ny; }
+    });
+    const body = document.body;
+    body.addEventListener('touchstart', e => gestures.onTouchStart(e), { passive: true });
+    body.addEventListener('touchmove',  e => { e.preventDefault(); gestures.onTouchMove(e); }, { passive: false });
+    body.addEventListener('touchend',   e => gestures.onTouchEnd(e),   { passive: true  });
+
+    /* ── WebXR 세션 시작 ── */
+    let session;
+    try {
+        session = await navigator.xr.requestSession('immersive-ar', {
+            requiredFeatures: ['hit-test'],
+            optionalFeatures: ['dom-overlay'],
+            domOverlay: { root: document.body }
+        });
+    } catch (err) {
+        showError('AR 세션을 시작할 수 없습니다.\n' + err.message);
+        return;
+    }
+
+    renderer.xr.setReferenceSpaceType('local');
+    await renderer.xr.setSession(session);
+
+    const viewerSpace  = await session.requestReferenceSpace('viewer');
+    const hitTestSrc   = await session.requestHitTestSource({ space: viewerSpace }).catch(() => null);
+    session.addEventListener('end', () => { /* cleanup */ });
+
+    session.addEventListener('selectstart', () => {
+        if (!videoPlaced) pendingTap = true;
+    });
+
+    setStatus('바닥을 스캔하는 중...');
+
+    /* ── 드래그용 바닥 평면 레이캐스터 ── */
+    const raycaster  = new THREE.Raycaster();
+    const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+    /* ── 렌더 루프 ── */
+    renderer.setAnimationLoop((time, frame) => {
+        if (!frame) return;
+
+        const refSpace = renderer.xr.getReferenceSpace();
+
+        /* hit-test 결과 처리 */
+        if (hitTestSrc && !videoPlaced) {
+            const results = frame.getHitTestResults(hitTestSrc);
+            if (results.length > 0) {
+                const pose = results[0].getPose(refSpace);
+                if (pose) {
+                    const m   = new THREE.Matrix4().fromArray(pose.transform.matrix);
+                    const pos = new THREE.Vector3();
+                    const rot = new THREE.Quaternion();
+                    const sc  = new THREE.Vector3();
+                    m.decompose(pos, rot, sc);
+
+                    reticle.visible = true;
+                    reticle.position.copy(pos);
+                    reticle.quaternion.copy(rot);
+                    setStatus('바닥을 탭하여 영상을 배치하세요');
+
+                    if (pendingTap) {
+                        pendingTap = false;
+                        placeAndroid(pos, rot);
+                    }
+                }
+            } else {
+                reticle.visible = false;
+                setStatus('바닥을 스캔하는 중...');
+            }
+            if (pendingTap) pendingTap = false;
+        }
+
+        /* 드래그: 바닥 평면 레이캐스트 */
+        if (videoPlaced && pendingDragNX >= 0) {
+            const ndcX = pendingDragNX * 2 - 1;
+            const ndcY = -(pendingDragNY * 2 - 1);
+            raycaster.setFromCamera({ x: ndcX, y: ndcY }, camera);
+            const hit = new THREE.Vector3();
+            if (raycaster.ray.intersectPlane(floorPlane, hit)) {
+                videoMesh.position.x = THREE.MathUtils.lerp(videoMesh.position.x, hit.x, 0.35);
+                videoMesh.position.z = THREE.MathUtils.lerp(videoMesh.position.z, hit.z, 0.35);
+            }
+            pendingDragNX = pendingDragNY = -1;
+        }
+
+        /* 빌보드: 항상 카메라를 향하게 (수평 회전만) */
+        if (videoPlaced) {
+            const cp = new THREE.Vector3();
+            camera.getWorldPosition(cp);
+            videoMesh.rotation.y = Math.atan2(
+                cp.x - videoMesh.position.x,
+                cp.z - videoMesh.position.z
+            );
+        }
+
+        renderer.render(scene, camera);
+    });
+
+    function placeAndroid(pos, rot) {
+        reticle.visible = false;
+        floorY          = pos.y;
+        floorPlane.constant = -floorY;
+
+        videoMesh.position.set(pos.x, pos.y + 0.42, pos.z);
+        videoMesh.visible = true;
+        videoPlaced       = true;
+        gestures.enable();
+        playWithAudio(video);
+        setStatus('크기 조절 및 위치 이동이 가능합니다', 4500);
+    }
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+}
+
+/* ═══════════════════════════════════════════════════════
+   iOS  —  8th Wall + 크로마키
+═══════════════════════════════════════════════════════ */
+function initIOS() {
+    if (EIGHTH_WALL_APP_KEY === 'YOUR_8TH_WALL_APP_KEY') {
+        showError('8th Wall 앱 키가 설정되지 않았습니다.\nindex.html 상단 EIGHTH_WALL_APP_KEY 를 실제 키로 교체하세요.');
+        return;
+    }
+
+    const script   = document.createElement('script');
+    script.src     = `https://apps.8thwall.com/xrweb?appKey=${EIGHTH_WALL_APP_KEY}`;
+    script.async   = false;
+    document.head.appendChild(script);
+
+    const timeout = setTimeout(() => {
+        if (typeof XR8 === 'undefined') {
+            showError('8th Wall 스크립트 로드 실패.\n앱 키와 네트워크를 확인해 주세요.');
+        }
+    }, 18000);
+
+    window.addEventListener('xrloaded', () => {
+        clearTimeout(timeout);
+        startEighthWall();
+    });
+}
+
+function startEighthWall() {
+    const canvas = document.getElementById('canvas');
+
+    /* ── 비디오 메쉬 ── */
+    const video     = makeVideo('assets/example-final.mp4');
+    let   videoMesh = null;
+    let   scene_    = null;
+    let   camera_   = null;
+
+    /* ── 상태 변수 ── */
+    let videoPlaced   = false;
+    const targetPos   = new THREE.Vector3();
+    const smoothPos   = new THREE.Vector3();
+    const SMOOTH_A    = 0.13;  // 낮을수록 더 부드럽고 안정적
+
+    /* ── 제스처 콜백용 큐 ── */
+    let pendingPlace  = null;  // { x, y } 정규화 좌표
+    let pendingDrag   = null;  // { x, y }
+
+    let gestures = null;
+
+    /* ── 터치 이벤트 (캔버스에 등록) ── */
+    function addTouchListeners() {
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            if (gestures) gestures.onTouchStart(e);
+            if (!videoPlaced && e.touches.length === 1) {
+                pendingPlace = {
+                    x: e.touches[0].clientX / window.innerWidth,
+                    y: e.touches[0].clientY / window.innerHeight
+                };
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (gestures) gestures.onTouchMove(e);
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', e => {
+            e.preventDefault();
+            if (gestures) gestures.onTouchEnd(e);
+        }, { passive: false });
+    }
+
+    /* ── 8th Wall 파이프라인 모듈 ── */
+    const ARModule = {
+        name: 'politics-ar',
+
+        onStart() {
+            const xrs  = XR8.Threejs.xrScene();
+            scene_     = xrs.scene;
+            camera_    = xrs.camera;
+
+            scene_.add(new THREE.AmbientLight(0xffffff, 1.4));
+
+            videoMesh = makeVideoMesh(video, true);
+            scene_.add(videoMesh);
+
+            gestures = new GestureManager(videoMesh, (nx, ny) => {
+                if (videoPlaced) pendingDrag = { x: nx, y: ny };
+            });
+
+            addTouchListeners();
+            setStatus('바닥을 스캔하는 중...');
+        },
+
+        onUpdate() {
+            if (!scene_) return;
+
+            /* 배치 탭 처리 */
+            if (pendingPlace && !videoPlaced) {
+                const hits = XR8.XrController.hitTest(
+                    pendingPlace.x, pendingPlace.y,
+                    ['FEATURE_POINT', 'ESTIMATED_SURFACE']
+                );
+                pendingPlace = null;
+
+                if (hits && hits.length > 0) {
+                    const { position, rotation } = hits[0];
+                    const pos = new THREE.Vector3(position.x, position.y, position.z);
+                    const rot = new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w);
+                    placeIOS(pos, rot);
+                } else {
+                    setStatus('바닥을 탭하여 영상을 배치하세요');
+                }
+            }
+
+            /* 드래그 이동 */
+            if (pendingDrag && videoPlaced) {
+                const hits = XR8.XrController.hitTest(
+                    pendingDrag.x, pendingDrag.y,
+                    ['FEATURE_POINT', 'ESTIMATED_SURFACE']
+                );
+                pendingDrag = null;
+
+                if (hits && hits.length > 0) {
+                    const { position } = hits[0];
+                    targetPos.set(position.x, position.y + 0.42, position.z);
+                }
+            }
+
+            /* 위치 스무딩 (흔들림 / 떨림 안정화) */
+            if (videoPlaced && videoMesh) {
+                smoothPos.lerp(targetPos, SMOOTH_A);
+                videoMesh.position.copy(smoothPos);
+
+                /* 빌보드: 수평 방향으로만 카메라를 향함 */
+                const cp = new THREE.Vector3();
+                camera_.getWorldPosition(cp);
+                videoMesh.rotation.y = Math.atan2(
+                    cp.x - smoothPos.x,
+                    cp.z - smoothPos.z
+                );
+            }
+        }
+    };
+
+    /* ── 표면 감지 이벤트 ── */
+    canvas.addEventListener('reality.surfacefound', () => {
+        if (!videoPlaced) setStatus('바닥을 탭하여 영상을 배치하세요');
+    });
+    canvas.addEventListener('reality.surfacelost', () => {
+        if (!videoPlaced) setStatus('바닥을 스캔하는 중...');
+    });
+
+    /* ── 8th Wall 파이프라인 구성 및 실행 ── */
+    XR8.addCameraPipelineModules([
+        XR8.GlTextureRenderer.pipelineModule(),
+        XR8.Threejs.pipelineModule(),
+        XR8.XrController.pipelineModule({
+            enableWorldPoints: true,
+            scale: 'responsive'
+        }),
+        ARModule
+    ]);
+
+    XR8.run({ canvas });
+
+    /* ── 배치 함수 ── */
+    function placeIOS(pos, rot) {
+        videoMesh.position.set(pos.x, pos.y + 0.42, pos.z);
+        videoMesh.visible = true;
+        videoPlaced       = true;
+        gestures.enable();
+
+        targetPos.copy(videoMesh.position);
+        smoothPos.copy(videoMesh.position);
+
+        playWithAudio(video);
+        setStatus('크기 조절 및 위치 이동이 가능합니다', 4500);
+    }
+}
+</script>
+</body>
+</html>
