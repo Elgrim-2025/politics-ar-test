@@ -287,16 +287,11 @@
 
 <!-- Three.js -->
 <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
+<!-- 8th Wall Engine (키 불필요, 로컬 바이너리) -->
+<script async src="./xr.js" data-preload-chunks="slam"></script>
 
 <script>
 'use strict';
-
-/* ═══════════════════════════════════════════════════════
-   ★ 8th Wall 앱 키 설정
-   https://www.8thwall.com 에서 프로젝트 생성 후
-   아래 APP_KEY 를 실제 키로 교체하세요.
-═══════════════════════════════════════════════════════ */
-//const EIGHTH_WALL_APP_KEY = 'YOUR_8TH_WALL_APP_KEY';
 
 /* ───────────────────────────────────────────────────────
    플랫폼 감지
@@ -675,26 +670,11 @@ async function initAndroid() {
    iOS  —  8th Wall + 크로마키
 ═══════════════════════════════════════════════════════ */
 function initIOS() {
-    if (EIGHTH_WALL_APP_KEY === 'YOUR_8TH_WALL_APP_KEY') {
-        showError('8th Wall 앱 키가 설정되지 않았습니다.\nindex.html 상단 EIGHTH_WALL_APP_KEY 를 실제 키로 교체하세요.');
-        return;
-    }
-
-    const script   = document.createElement('script');
-    script.src     = `https://apps.8thwall.com/xrweb?appKey=${EIGHTH_WALL_APP_KEY}`;
-    script.async   = false;
-    document.head.appendChild(script);
-
-    const timeout = setTimeout(() => {
-        if (typeof XR8 === 'undefined') {
-            showError('8th Wall 스크립트 로드 실패.\n앱 키와 네트워크를 확인해 주세요.');
-        }
-    }, 18000);
-
-    window.addEventListener('xrloaded', () => {
-        clearTimeout(timeout);
+    if (typeof XR8 !== 'undefined') {
         startEighthWall();
-    });
+    } else {
+        window.addEventListener('xrloaded', startEighthWall);
+    }
 }
 
 function startEighthWall() {
