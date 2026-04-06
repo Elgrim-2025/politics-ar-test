@@ -260,15 +260,15 @@
                 <span class="li-text">카메라를 <strong>바닥</strong>을 향해 천천히<br>움직여 바닥을 인식시켜 주십시오</span>
             </li>
             <li>
-                <span class="li-icon">👆</span>
+                <span class="li-icon"></span>
                 <span class="li-text">바닥이 인식되면 화면을 <strong>탭</strong>하여<br>영상을 원하는 위치에 배치하세요</span>
             </li>
             <li>
-                <span class="li-icon">🤏</span>
+                <span class="li-icon"></span>
                 <span class="li-text"><strong>두 손가락 핀치</strong>로 영상의 크기를<br>자유롭게 조절할 수 있습니다</span>
             </li>
             <li>
-                <span class="li-icon">✋</span>
+                <span class="li-icon"></span>
                 <span class="li-text"><strong>한 손가락 드래그</strong>로 영상의 위치를<br>이동할 수 있습니다</span>
             </li>
         </ul>
@@ -436,7 +436,7 @@ function makeVideoMesh(video, useChroma) {
           });
 
     // 16:9 비율, 기본 너비 1.5m
-    const mesh   = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5 * 9/16), mat);
+    const mesh   = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5 * 16/9), mat);
     mesh.visible = false;
     return mesh;
 }
